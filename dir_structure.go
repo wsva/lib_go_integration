@@ -5,4 +5,5 @@ const (
 	DirData   = "data"
 	DirLog    = "log"
 	DirPKI    = "pki"
+	DirTmp    = "tmp"
 )
