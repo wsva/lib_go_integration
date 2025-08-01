@@ -1,0 +1,1 @@
+the common parts of different systems for integration
