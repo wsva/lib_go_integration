@@ -8,6 +8,7 @@ require (
 	github.com/tidwall/pretty v1.2.1
 	github.com/wsva/lib_go v1.0.4
 	github.com/wsva/lib_go_db v1.0.1
+	golang.org/x/oauth2 v0.30.0
 )
 
 require (
@@ -31,6 +32,7 @@ require (
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/sijms/go-ora/v2 v2.9.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
@@ -49,6 +51,7 @@ require (
 	golang.org/x/sync v0.15.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.17.0 // indirect
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	modernc.org/libc v1.66.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect

@@ -51,7 +51,7 @@ func EncryptCommonConfig(basepath, aesKey, aesIV string, cc *CommonConfig) error
 	if err != nil {
 		return err
 	}
-	err = os.WriteFile(path.Join(basepath, CommonConfigFile),
+	err = os.WriteFile(path.Join(basepath, DirConfig, CommonConfigFile),
 		pretty.Pretty(jsonBytes), 0666)
 	if err != nil {
 		return err
