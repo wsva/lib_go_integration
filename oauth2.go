@@ -28,11 +28,6 @@ type UserInfo struct {
 	Email string `json:"email"`
 }
 
-func (u *UserInfo) String() string {
-	jsonBytes, _ := json.Marshal(u)
-	return string(jsonBytes)
-}
-
 type IntrospectResponse struct {
 	Active  bool   `json:"active"`
 	Subject string `json:"sub"`
@@ -104,7 +99,8 @@ func (o *OAuth2) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed decoding user info: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	SetCookieToken(w, "userinfo", userInfo.String(), int(365*24*time.Hour/time.Second))
+	jsonBytes, _ := json.Marshal(userInfo)
+	SetCookieToken(w, "userinfo", base64.URLEncoding.EncodeToString(jsonBytes), int(365*24*time.Hour/time.Second))
 
 	http.Redirect(w, r, o.ReturnTo, http.StatusSeeOther)
 }
