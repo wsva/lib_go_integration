@@ -3,15 +3,12 @@ package lib
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -112,7 +109,7 @@ func (o *OAuth2) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, o.ReturnTo, http.StatusSeeOther)
 }
 
-func VerifyToken(r *http.Request, introspectURL string) error {
+func VerifyToken(r *http.Request, client *http.Client, introspectURL string) error {
 	tokenString, err := ParseTokenFromRequest(r)
 	if err != nil {
 		return err
@@ -123,7 +120,7 @@ func VerifyToken(r *http.Request, introspectURL string) error {
 	//req.SetBasicAuth(o.Config.ClientID, "client_secret")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return errors.New("request introspect error")
 	}
@@ -145,34 +142,14 @@ type AuthService struct {
 	IntrospectURL string `json:"IntrospectURL"`
 }
 
-func (a *AuthService) OAuth2(caCrtFile, state string) (*OAuth2, error) {
-	caCert, err := os.ReadFile(caCrtFile)
-	if err != nil {
-		return nil, err
-	}
-	caCertPool := x509.NewCertPool()
-	if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
-		return nil, errors.New("add ca to cert pool error")
-	}
-
+func (a *AuthService) OAuth2(client *http.Client, state string) *OAuth2 {
 	verifier := wl_uuid.New()
 	s256 := sha256.Sum256([]byte(verifier))
 	// trim padding, but why?
 	challenge := strings.TrimRight(base64.URLEncoding.EncodeToString(s256[:]), "=")
 
 	return &OAuth2{
-		Context: context.WithValue(
-			context.Background(),
-			oauth2.HTTPClient,
-			&http.Client{
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{
-						RootCAs: caCertPool,
-					},
-				},
-				Timeout: 10 * time.Second,
-			},
-		),
+		Context: context.WithValue(context.Background(), oauth2.HTTPClient, client),
 		Config: &oauth2.Config{
 			ClientID:     a.ClientID,
 			ClientSecret: "current_no_use",
@@ -187,7 +164,7 @@ func (a *AuthService) OAuth2(caCrtFile, state string) (*OAuth2, error) {
 		CodeChallenge: challenge,
 		UserinfoURL:   a.UserInfoURL,
 		IntrospectURL: a.IntrospectURL,
-	}, nil
+	}
 }
 
 // user state as key
@@ -195,17 +172,14 @@ type OAuth2Map struct {
 	Map map[string]*OAuth2
 }
 
-func (o *OAuth2Map) Add(auth *AuthService, caCrtFile string) (*OAuth2, error) {
+func (o *OAuth2Map) Add(auth *AuthService, client *http.Client) *OAuth2 {
 	if o.Map == nil {
 		o.Map = make(map[string]*OAuth2)
 	}
 	state := wl_uuid.New()
-	oauth2, err := auth.OAuth2(caCrtFile, state)
-	if err != nil {
-		return nil, err
-	}
+	oauth2 := auth.OAuth2(client, state)
 	o.Map[state] = oauth2
-	return oauth2, nil
+	return oauth2
 }
 
 func (o *OAuth2Map) Get(state string) (*OAuth2, error) {
