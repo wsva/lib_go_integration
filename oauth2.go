@@ -159,7 +159,7 @@ func (a *AuthService) OAuth2(client *http.Client, state string) *OAuth2 {
 				TokenURL: a.TokenURL,
 			},
 		},
-		State:         wl_uuid.New(),
+		State:         state,
 		CodeVerifier:  verifier,
 		CodeChallenge: challenge,
 		UserinfoURL:   a.UserInfoURL,
@@ -177,20 +177,20 @@ func (o *OAuth2Map) Add(auth *AuthService, client *http.Client) *OAuth2 {
 		o.Map = make(map[string]*OAuth2)
 	}
 	state := wl_uuid.New()
-	oauth2 := auth.OAuth2(client, state)
-	o.Map[state] = oauth2
-	return oauth2
+	oa := auth.OAuth2(client, state)
+	o.Map[state] = oa
+	return oa
 }
 
 func (o *OAuth2Map) Get(state string) (*OAuth2, error) {
 	if o.Map == nil {
 		o.Map = make(map[string]*OAuth2)
 	}
-	oauth2, ok := o.Map[state]
+	oa, ok := o.Map[state]
 	if !ok {
 		return nil, errors.New("invalid state")
 	}
-	return oauth2, nil
+	return oa, nil
 }
 
 func (o *OAuth2Map) Delete(state string) {
