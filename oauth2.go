@@ -35,11 +35,17 @@ type OAuth2 struct {
 	CodeChallenge string
 	UserinfoURL   string
 	IntrospectURL string
+	UserInfo      map[string]any
+	ReturnTo      string
 }
 
 // redirect to oauth2/authorize
 func (o *OAuth2) GetHandleLogin() func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		return_to := r.FormValue("return_to")
+		return_to, _ = url.PathUnescape(return_to)
+		o.ReturnTo = return_to
+
 		thisHost := wl_net.GetSchemaAndHost(r)
 		o.Config.RedirectURL = fmt.Sprintf("%v%v", thisHost, OAuth2CallbackPath)
 
@@ -91,9 +97,9 @@ func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request
 			http.Error(w, "failed decoding user info: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		o.UserInfo = userInfo
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(userInfo)
+		http.Redirect(w, r, o.ReturnTo, http.StatusSeeOther)
 	}
 }
 
