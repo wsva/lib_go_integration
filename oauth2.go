@@ -48,6 +48,8 @@ func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request
 			http.Error(w, "code exchange failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		SetCookieToken(w, "access_token", token.AccessToken, int(token.ExpiresIn))
+		SetCookieToken(w, "refresh_token", token.RefreshToken, int(token.ExpiresIn))
 
 		// get user info using token
 		client := o.Config.Client(context.Background(), token)

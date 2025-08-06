@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func SetCookieToken(w http.ResponseWriter, name, value string) {
+func SetCookieToken(w http.ResponseWriter, name, value string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    value,
@@ -15,7 +15,7 @@ func SetCookieToken(w http.ResponseWriter, name, value string) {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(7 * 24 * time.Hour / time.Second),
+		MaxAge:   maxAge,
 		Expires:  time.Now().Add(7 * 24 * time.Hour), // longer expiration
 	})
 }
