@@ -3,7 +3,9 @@ package lib
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"golang.org/x/oauth2"
 
@@ -14,23 +16,6 @@ type OAuth2 struct {
 	Config      *oauth2.Config
 	State       string
 	UserinfoURL string
-}
-
-func NewOAuth2(client_id, authorizeUrl, tokenUrl, userinfoUrl string) *OAuth2 {
-	return &OAuth2{
-		Config: &oauth2.Config{
-			ClientID:     client_id,
-			ClientSecret: "current_no_use",
-			RedirectURL:  "/oauth2/callback",
-			Scopes:       []string{"openid", "profile", "email"},
-			Endpoint: oauth2.Endpoint{
-				AuthURL:  authorizeUrl,
-				TokenURL: tokenUrl,
-			},
-		},
-		State:       wl_uuid.New(),
-		UserinfoURL: userinfoUrl,
-	}
 }
 
 // redirect to oauth2/authorize
@@ -80,4 +65,62 @@ func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(userInfo)
 	}
+}
+
+type TokenInfo struct {
+	Active   bool   `json:"active"`
+	Scope    string `json:"scope"`
+	Username string `json:"username"`
+	Sub      string `json:"sub"`
+}
+
+type AuthService struct {
+	ClientID      string `json:"ClientID"`
+	AuthorizeURL  string `json:"AuthorizeURL"`
+	TokenURL      string `json:"TokenURL"`
+	UserInfoURL   string `json:"UserInfoURL"`
+	IntrospectURL string `json:"IntrospectURL"`
+}
+
+func (a *AuthService) OAuth2() *OAuth2 {
+	return &OAuth2{
+		Config: &oauth2.Config{
+			ClientID:     a.ClientID,
+			ClientSecret: "current_no_use",
+			RedirectURL:  "/oauth2/callback",
+			Scopes:       []string{"openid", "profile", "email"},
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  a.AuthorizeURL,
+				TokenURL: a.TokenURL,
+			},
+		},
+		State:       wl_uuid.New(),
+		UserinfoURL: a.UserInfoURL,
+	}
+}
+
+func (a *AuthService) IntrospectAccessToken(r *http.Request) (*TokenInfo, error) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+		return nil, fmt.Errorf("missing access token")
+	}
+	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+	reqBody := strings.NewReader("token=" + tokenString)
+	req, _ := http.NewRequest("POST", a.IntrospectURL, reqBody)
+	req.SetBasicAuth(a.ClientID, "client_secret")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result *TokenInfo
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
