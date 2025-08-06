@@ -32,6 +32,11 @@ type UserInfo struct {
 	Email string `json:"email"`
 }
 
+func (u *UserInfo) String() string {
+	jsonBytes, _ := json.Marshal(u)
+	return string(jsonBytes)
+}
+
 type OAuth2 struct {
 	Context       context.Context
 	Config        *oauth2.Config
@@ -40,7 +45,6 @@ type OAuth2 struct {
 	CodeChallenge string
 	UserinfoURL   string
 	IntrospectURL string
-	UserInfo      UserInfo
 	ReturnTo      string
 }
 
@@ -102,18 +106,17 @@ func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request
 			http.Error(w, "failed decoding user info: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		o.UserInfo = userInfo
+		SetCookieToken(w, "userinfo", userInfo.String(), int(365*24*time.Hour/time.Second))
 
 		http.Redirect(w, r, o.ReturnTo, http.StatusSeeOther)
 	}
 }
 
 func (o *OAuth2) VerifyToken(r *http.Request) error {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-		return errors.New("missing access token")
+	tokenString, err := ParseTokenFromRequest(r)
+	if err != nil {
+		return err
 	}
-	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
 	reqBody := strings.NewReader("token=" + tokenString)
 	req, _ := http.NewRequest("POST", o.IntrospectURL, reqBody)
@@ -153,7 +156,7 @@ type AuthService struct {
 	IntrospectURL string `json:"IntrospectURL"`
 }
 
-func (a *AuthService) OAuth2(caCrtFile string) (*OAuth2, error) {
+func (a *AuthService) OAuth2(caCrtFile, state string) (*OAuth2, error) {
 	caCert, err := os.ReadFile(caCrtFile)
 	if err != nil {
 		return nil, err
@@ -196,4 +199,40 @@ func (a *AuthService) OAuth2(caCrtFile string) (*OAuth2, error) {
 		UserinfoURL:   a.UserInfoURL,
 		IntrospectURL: a.IntrospectURL,
 	}, nil
+}
+
+// user state as key
+type OAuth2Map struct {
+	Map map[string]*OAuth2
+}
+
+func (o *OAuth2Map) Add(auth *AuthService, caCrtFile string) error {
+	if o.Map == nil {
+		o.Map = make(map[string]*OAuth2)
+	}
+	state := wl_uuid.New()
+	oauth2, err := auth.OAuth2(caCrtFile, state)
+	if err != nil {
+		return err
+	}
+	o.Map[state] = oauth2
+	return nil
+}
+
+func (o *OAuth2Map) Get(state string) (*OAuth2, error) {
+	if o.Map == nil {
+		o.Map = make(map[string]*OAuth2)
+	}
+	oauth2, ok := o.Map[state]
+	if !ok {
+		return nil, errors.New("invalid state")
+	}
+	return oauth2, nil
+}
+
+func (o *OAuth2Map) Delete(state string) {
+	if o.Map == nil {
+		o.Map = make(map[string]*OAuth2)
+	}
+	delete(o.Map, state)
 }
