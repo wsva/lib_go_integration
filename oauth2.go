@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -68,35 +69,39 @@ func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request
 	}
 }
 
+func (o *OAuth2) VerifyToken(r *http.Request) error {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+		return errors.New("missing access token")
+	}
+	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+	reqBody := strings.NewReader("token=" + tokenString)
+	req, _ := http.NewRequest("POST", o.IntrospectURL, reqBody)
+	req.SetBasicAuth(o.Config.ClientID, "client_secret")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return errors.New("request introspect error")
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
+	active, ok := result["active"].(bool)
+	if !ok || !active {
+		return errors.New("invalid token")
+	}
+	return nil
+}
+
 func (o *OAuth2) GetHandleVerifyToken() func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			wl_http.RespondError(w, "missing access token")
+		if err := o.VerifyToken(r); err != nil {
+			wl_http.RespondError(w, err)
 			return
 		}
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-
-		reqBody := strings.NewReader("token=" + tokenString)
-		req, _ := http.NewRequest("POST", o.IntrospectURL, reqBody)
-		req.SetBasicAuth(o.Config.ClientID, "client_secret")
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			wl_http.RespondError(w, "request introspect error")
-			return
-		}
-		defer resp.Body.Close()
-
-		var result map[string]any
-		json.NewDecoder(resp.Body).Decode(&result)
-		active, ok := result["active"].(bool)
-		if !ok || !active {
-			wl_http.RespondError(w, "invalid token")
-			return
-		}
-
 		next(w, r)
 	}
 }
