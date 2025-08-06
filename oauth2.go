@@ -37,6 +37,11 @@ func (u *UserInfo) String() string {
 	return string(jsonBytes)
 }
 
+type IntrospectResponse struct {
+	Active  bool   `json:"active"`
+	Subject string `json:"sub"`
+}
+
 type OAuth2 struct {
 	Context       context.Context
 	Config        *oauth2.Config
@@ -112,15 +117,15 @@ func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request
 	}
 }
 
-func (o *OAuth2) VerifyToken(r *http.Request) error {
+func VerifyToken(r *http.Request, introspectURL string) error {
 	tokenString, err := ParseTokenFromRequest(r)
 	if err != nil {
 		return err
 	}
 
 	reqBody := strings.NewReader("token=" + tokenString)
-	req, _ := http.NewRequest("POST", o.IntrospectURL, reqBody)
-	req.SetBasicAuth(o.Config.ClientID, "client_secret")
+	req, _ := http.NewRequest("POST", introspectURL, reqBody)
+	//req.SetBasicAuth(o.Config.ClientID, "client_secret")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -129,10 +134,9 @@ func (o *OAuth2) VerifyToken(r *http.Request) error {
 	}
 	defer resp.Body.Close()
 
-	var result map[string]any
-	json.NewDecoder(resp.Body).Decode(&result)
-	active, ok := result["active"].(bool)
-	if !ok || !active {
+	var result IntrospectResponse
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	if err != nil || !result.Active {
 		return errors.New("invalid token")
 	}
 	return nil
@@ -140,7 +144,7 @@ func (o *OAuth2) VerifyToken(r *http.Request) error {
 
 func (o *OAuth2) GetHandleVerifyToken() func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		if err := o.VerifyToken(r); err != nil {
+		if err := VerifyToken(r, o.IntrospectURL); err != nil {
 			wl_http.RespondError(w, err)
 			return
 		}
