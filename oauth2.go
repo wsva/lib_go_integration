@@ -17,7 +17,6 @@ import (
 
 	"golang.org/x/oauth2"
 
-	wl_http "github.com/wsva/lib_go/http"
 	wl_net "github.com/wsva/lib_go/net"
 	wl_uuid "github.com/wsva/lib_go/uuid"
 )
@@ -54,67 +53,63 @@ type OAuth2 struct {
 }
 
 // redirect to oauth2/authorize
-func (o *OAuth2) GetHandleLogin() func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		return_to := r.FormValue("return_to")
-		return_to, _ = url.PathUnescape(return_to)
-		o.ReturnTo = return_to
+func (o *OAuth2) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	return_to := r.FormValue("return_to")
+	return_to, _ = url.PathUnescape(return_to)
+	o.ReturnTo = return_to
 
-		thisHost := wl_net.GetSchemaAndHost(r)
-		o.Config.RedirectURL = fmt.Sprintf("%v%v", thisHost, OAuth2CallbackPath)
+	thisHost := wl_net.GetSchemaAndHost(r)
+	o.Config.RedirectURL = fmt.Sprintf("%v%v", thisHost, OAuth2CallbackPath)
 
-		authCodeURL := o.Config.AuthCodeURL(o.State, oauth2.AccessTypeOffline)
-		authURL, _ := url.Parse(authCodeURL)
-		query := authURL.Query()
-		query.Set("code_challenge", o.CodeChallenge)
-		query.Set("code_challenge_method", "S256")
-		authURL.RawQuery = query.Encode()
+	authCodeURL := o.Config.AuthCodeURL(o.State, oauth2.AccessTypeOffline)
+	authURL, _ := url.Parse(authCodeURL)
+	query := authURL.Query()
+	query.Set("code_challenge", o.CodeChallenge)
+	query.Set("code_challenge_method", "S256")
+	authURL.RawQuery = query.Encode()
 
-		http.Redirect(w, r, authURL.String(), http.StatusTemporaryRedirect)
-	}
+	http.Redirect(w, r, authURL.String(), http.StatusTemporaryRedirect)
 }
 
-func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		state := r.FormValue("state")
-		if state != o.State {
-			http.Error(w, "invalid oauth state", http.StatusBadRequest)
-			return
-		}
-
-		code := r.FormValue("code")
-		if code == "" {
-			http.Error(w, "code not found", http.StatusBadRequest)
-			return
-		}
-
-		// get token using code
-		token, err := o.Config.Exchange(o.Context, code, oauth2.SetAuthURLParam("code_verifier", o.CodeVerifier))
-		if err != nil {
-			http.Error(w, "code exchange failed: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		SetCookieToken(w, "access_token", token.AccessToken, int(token.ExpiresIn))
-		SetCookieToken(w, "refresh_token", token.RefreshToken, int(token.ExpiresIn))
-
-		// get user info using token
-		client := o.Config.Client(o.Context, token)
-		resp, err := client.Get(o.UserinfoURL)
-		if err != nil {
-			http.Error(w, "failed getting user info: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer resp.Body.Close()
-
-		var userInfo UserInfo
-		if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
-			http.Error(w, "failed decoding user info: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		SetCookieToken(w, "userinfo", userInfo.String(), int(365*24*time.Hour/time.Second))
-
-		http.Redirect(w, r, o.ReturnTo, http.StatusSeeOther)
+func (o *OAuth2) HandleCallback(w http.ResponseWriter, r *http.Request) {
+	state := r.FormValue("state")
+	if state != o.State {
+		http.Error(w, "invalid oauth state", http.StatusBadRequest)
+		return
 	}
+
+	code := r.FormValue("code")
+	if code == "" {
+		http.Error(w, "code not found", http.StatusBadRequest)
+		return
+	}
+
+	// get token using code
+	token, err := o.Config.Exchange(o.Context, code, oauth2.SetAuthURLParam("code_verifier", o.CodeVerifier))
+	if err != nil {
+		http.Error(w, "code exchange failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	SetCookieToken(w, "access_token", token.AccessToken, int(token.ExpiresIn))
+	SetCookieToken(w, "refresh_token", token.RefreshToken, int(token.ExpiresIn))
+
+	// get user info using token
+	client := o.Config.Client(o.Context, token)
+	resp, err := client.Get(o.UserinfoURL)
+	if err != nil {
+		http.Error(w, "failed getting user info: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	var userInfo UserInfo
+	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+		http.Error(w, "failed decoding user info: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	SetCookieToken(w, "userinfo", userInfo.String(), int(365*24*time.Hour/time.Second))
+
+	http.Redirect(w, r, o.ReturnTo, http.StatusSeeOther)
 }
 
 func VerifyToken(r *http.Request, introspectURL string) error {
@@ -140,16 +135,6 @@ func VerifyToken(r *http.Request, introspectURL string) error {
 		return errors.New("invalid token")
 	}
 	return nil
-}
-
-func (o *OAuth2) GetHandleVerifyToken() func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		if err := VerifyToken(r, o.IntrospectURL); err != nil {
-			wl_http.RespondError(w, err)
-			return
-		}
-		next(w, r)
-	}
 }
 
 type AuthService struct {
