@@ -2,11 +2,15 @@ package lib
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/oauth2"
 
@@ -21,6 +25,7 @@ const (
 )
 
 type OAuth2 struct {
+	Context       context.Context
 	Config        *oauth2.Config
 	State         string
 	UserinfoURL   string
@@ -52,7 +57,7 @@ func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request
 		}
 
 		// get token using code
-		token, err := o.Config.Exchange(context.Background(), code)
+		token, err := o.Config.Exchange(o.Context, code)
 		if err != nil {
 			http.Error(w, "code exchange failed: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -61,7 +66,7 @@ func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request
 		SetCookieToken(w, "refresh_token", token.RefreshToken, int(token.ExpiresIn))
 
 		// get user info using token
-		client := o.Config.Client(context.Background(), token)
+		client := o.Config.Client(o.Context, token)
 		resp, err := client.Get(o.UserinfoURL)
 		if err != nil {
 			http.Error(w, "failed getting user info: "+err.Error(), http.StatusInternalServerError)
@@ -125,8 +130,29 @@ type AuthService struct {
 	IntrospectURL string `json:"IntrospectURL"`
 }
 
-func (a *AuthService) OAuth2() *OAuth2 {
+func (a *AuthService) OAuth2(caCrtFile string) (*OAuth2, error) {
+	caCert, err := os.ReadFile(caCrtFile)
+	if err != nil {
+		return nil, err
+	}
+	caCertPool := x509.NewCertPool()
+	if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+		return nil, errors.New("add ca to cert pool error")
+	}
+
 	return &OAuth2{
+		Context: context.WithValue(
+			context.Background(),
+			oauth2.HTTPClient,
+			&http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{
+						RootCAs: caCertPool,
+					},
+				},
+				Timeout: 10 * time.Second,
+			},
+		),
 		Config: &oauth2.Config{
 			ClientID:     a.ClientID,
 			ClientSecret: "current_no_use",
@@ -139,5 +165,5 @@ func (a *AuthService) OAuth2() *OAuth2 {
 		State:         wl_uuid.New(),
 		UserinfoURL:   a.UserInfoURL,
 		IntrospectURL: a.IntrospectURL,
-	}
+	}, nil
 }
