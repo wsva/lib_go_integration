@@ -3,31 +3,32 @@ package lib
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 
 	"golang.org/x/oauth2"
 
+	wl_http "github.com/wsva/lib_go/http"
 	wl_uuid "github.com/wsva/lib_go/uuid"
 )
 
 type OAuth2 struct {
-	Config      *oauth2.Config
-	State       string
-	UserinfoURL string
+	Config        *oauth2.Config
+	State         string
+	UserinfoURL   string
+	IntrospectURL string
 }
 
 // redirect to oauth2/authorize
-func (o *OAuth2) GetHandleLogin() func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (o *OAuth2) GetHandleLogin() func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		url := o.Config.AuthCodeURL(o.State, oauth2.AccessTypeOffline)
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 	}
 }
 
-func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		state := r.FormValue("state")
 		if state != o.State {
 			http.Error(w, "invalid oauth state", http.StatusBadRequest)
@@ -67,11 +68,37 @@ func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request
 	}
 }
 
-type TokenInfo struct {
-	Active   bool   `json:"active"`
-	Scope    string `json:"scope"`
-	Username string `json:"username"`
-	Sub      string `json:"sub"`
+func (o *OAuth2) GetHandleVerifyToken() func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			wl_http.RespondError(w, "missing access token")
+			return
+		}
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+		reqBody := strings.NewReader("token=" + tokenString)
+		req, _ := http.NewRequest("POST", o.IntrospectURL, reqBody)
+		req.SetBasicAuth(o.Config.ClientID, "client_secret")
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			wl_http.RespondError(w, "request introspect error")
+			return
+		}
+		defer resp.Body.Close()
+
+		var result map[string]any
+		json.NewDecoder(resp.Body).Decode(&result)
+		active, ok := result["active"].(bool)
+		if !ok || !active {
+			wl_http.RespondError(w, "invalid token")
+			return
+		}
+
+		next(w, r)
+	}
 }
 
 type AuthService struct {
@@ -94,33 +121,8 @@ func (a *AuthService) OAuth2() *OAuth2 {
 				TokenURL: a.TokenURL,
 			},
 		},
-		State:       wl_uuid.New(),
-		UserinfoURL: a.UserInfoURL,
+		State:         wl_uuid.New(),
+		UserinfoURL:   a.UserInfoURL,
+		IntrospectURL: a.IntrospectURL,
 	}
-}
-
-func (a *AuthService) IntrospectAccessToken(r *http.Request) (*TokenInfo, error) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-		return nil, fmt.Errorf("missing access token")
-	}
-	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-
-	reqBody := strings.NewReader("token=" + tokenString)
-	req, _ := http.NewRequest("POST", a.IntrospectURL, reqBody)
-	req.SetBasicAuth(a.ClientID, "client_secret")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result *TokenInfo
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
 }
