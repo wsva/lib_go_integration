@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"golang.org/x/oauth2"
 
 	wl_http "github.com/wsva/lib_go/http"
+	wl_net "github.com/wsva/lib_go/net"
 	wl_uuid "github.com/wsva/lib_go/uuid"
 )
 
@@ -116,12 +118,13 @@ type AuthService struct {
 	IntrospectURL string `json:"IntrospectURL"`
 }
 
-func (a *AuthService) OAuth2() *OAuth2 {
+func (a *AuthService) OAuth2(r *http.Request) *OAuth2 {
+	thisHost := wl_net.GetSchemaAndHost(r)
 	return &OAuth2{
 		Config: &oauth2.Config{
 			ClientID:     a.ClientID,
 			ClientSecret: "current_no_use",
-			RedirectURL:  "/oauth2/callback",
+			RedirectURL:  fmt.Sprintf("%v/oauth2/callback", thisHost),
 			Scopes:       []string{"openid", "profile", "email"},
 			Endpoint: oauth2.Endpoint{
 				AuthURL:  a.AuthorizeURL,
