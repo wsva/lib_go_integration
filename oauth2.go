@@ -27,6 +27,11 @@ const (
 	OAuth2CallbackPath = "/oauth2/callback"
 )
 
+type UserInfo struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
 type OAuth2 struct {
 	Context       context.Context
 	Config        *oauth2.Config
@@ -35,7 +40,7 @@ type OAuth2 struct {
 	CodeChallenge string
 	UserinfoURL   string
 	IntrospectURL string
-	UserInfo      map[string]any
+	UserInfo      UserInfo
 	ReturnTo      string
 }
 
@@ -92,7 +97,7 @@ func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request
 		}
 		defer resp.Body.Close()
 
-		var userInfo map[string]any
+		var userInfo UserInfo
 		if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
 			http.Error(w, "failed decoding user info: "+err.Error(), http.StatusInternalServerError)
 			return
