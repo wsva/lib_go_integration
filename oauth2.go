@@ -15,6 +15,11 @@ import (
 	wl_uuid "github.com/wsva/lib_go/uuid"
 )
 
+const (
+	OAuth2LoginPath    = "/oauth2/login"
+	OAuth2CallbackPath = "/oauth2/callback"
+)
+
 type OAuth2 struct {
 	Config        *oauth2.Config
 	State         string
@@ -25,6 +30,8 @@ type OAuth2 struct {
 // redirect to oauth2/authorize
 func (o *OAuth2) GetHandleLogin() func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		thisHost := wl_net.GetSchemaAndHost(r)
+		o.Config.RedirectURL = fmt.Sprintf("%v%v", thisHost, OAuth2CallbackPath)
 		url := o.Config.AuthCodeURL(o.State, oauth2.AccessTypeOffline)
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 	}
@@ -118,13 +125,11 @@ type AuthService struct {
 	IntrospectURL string `json:"IntrospectURL"`
 }
 
-func (a *AuthService) OAuth2(r *http.Request) *OAuth2 {
-	thisHost := wl_net.GetSchemaAndHost(r)
+func (a *AuthService) OAuth2() *OAuth2 {
 	return &OAuth2{
 		Config: &oauth2.Config{
 			ClientID:     a.ClientID,
 			ClientSecret: "current_no_use",
-			RedirectURL:  fmt.Sprintf("%v/oauth2/callback", thisHost),
 			Scopes:       []string{"openid", "profile", "email"},
 			Endpoint: oauth2.Endpoint{
 				AuthURL:  a.AuthorizeURL,
