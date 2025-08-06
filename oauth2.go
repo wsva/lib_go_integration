@@ -210,17 +210,17 @@ type OAuth2Map struct {
 	Map map[string]*OAuth2
 }
 
-func (o *OAuth2Map) Add(auth *AuthService, caCrtFile string) error {
+func (o *OAuth2Map) Add(auth *AuthService, caCrtFile string) (*OAuth2, error) {
 	if o.Map == nil {
 		o.Map = make(map[string]*OAuth2)
 	}
 	state := wl_uuid.New()
 	oauth2, err := auth.OAuth2(caCrtFile, state)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	o.Map[state] = oauth2
-	return nil
+	return oauth2, nil
 }
 
 func (o *OAuth2Map) Get(state string) (*OAuth2, error) {
