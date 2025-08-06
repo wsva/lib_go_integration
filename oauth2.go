@@ -2,12 +2,15 @@ package lib
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -28,6 +31,8 @@ type OAuth2 struct {
 	Context       context.Context
 	Config        *oauth2.Config
 	State         string
+	CodeVerifier  string
+	CodeChallenge string
 	UserinfoURL   string
 	IntrospectURL string
 }
@@ -37,8 +42,15 @@ func (o *OAuth2) GetHandleLogin() func(w http.ResponseWriter, r *http.Request, n
 	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		thisHost := wl_net.GetSchemaAndHost(r)
 		o.Config.RedirectURL = fmt.Sprintf("%v%v", thisHost, OAuth2CallbackPath)
-		url := o.Config.AuthCodeURL(o.State, oauth2.AccessTypeOffline)
-		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+
+		authCodeURL := o.Config.AuthCodeURL(o.State, oauth2.AccessTypeOffline)
+		authURL, _ := url.Parse(authCodeURL)
+		query := authURL.Query()
+		query.Set("code_challenge", o.CodeChallenge)
+		query.Set("code_challenge_method", "S256")
+		authURL.RawQuery = query.Encode()
+
+		http.Redirect(w, r, authURL.String(), http.StatusTemporaryRedirect)
 	}
 }
 
@@ -57,7 +69,7 @@ func (o *OAuth2) GetHandleCallback() func(w http.ResponseWriter, r *http.Request
 		}
 
 		// get token using code
-		token, err := o.Config.Exchange(o.Context, code)
+		token, err := o.Config.Exchange(o.Context, code, oauth2.SetAuthURLParam("code_verifier", o.CodeVerifier))
 		if err != nil {
 			http.Error(w, "code exchange failed: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -140,6 +152,11 @@ func (a *AuthService) OAuth2(caCrtFile string) (*OAuth2, error) {
 		return nil, errors.New("add ca to cert pool error")
 	}
 
+	verifier := wl_uuid.New()
+	s256 := sha256.Sum256([]byte(verifier))
+	// trim padding, but why?
+	challenge := strings.TrimRight(base64.URLEncoding.EncodeToString(s256[:]), "=")
+
 	return &OAuth2{
 		Context: context.WithValue(
 			context.Background(),
@@ -163,6 +180,8 @@ func (a *AuthService) OAuth2(caCrtFile string) (*OAuth2, error) {
 			},
 		},
 		State:         wl_uuid.New(),
+		CodeVerifier:  verifier,
+		CodeChallenge: challenge,
 		UserinfoURL:   a.UserInfoURL,
 		IntrospectURL: a.IntrospectURL,
 	}, nil
